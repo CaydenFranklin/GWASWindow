@@ -59,26 +59,27 @@ def main(argv):
     # maximum base pair distance between significant SNPs on each dataset
     window_size = 0
     try:
-        opts, args = getopt.getopt(argv, "hd1:d2:o:w:")
+        # A and B used instead of 1 and 2 because shortargs only allows single char args
+        opts, args = getopt.getopt(argv, "ha:b:o:w:")
     except getopt.GetoptError:
-        print('main.py -d1 <dataset_1> -d2 <dataset_2> -o <outputfile> -w <window size in BP>')
+        print('window_SNP.py -a <dataset_a> -b <dataset_b> -o <outputfile> -w <window size in BP>')
         sys.exit(2)
     for opt, arg in opts:
         if opt == '-h':
-            print('main.py -d1 <dataset_1> -d2 <dataset_2> -o <outputfile> -w <window size in BP>')
+            print('window_SNP.py -a <dataset_a> -b <dataset_b> -o <outputfile> -w <window size in BP>')
             sys.exit()
-        elif opt == "-d1":
+        elif opt == "-a":
             dataset_1 = arg
-        elif opt == "-d1":
+        elif opt == "-b":
             dataset_2 = arg
         elif opt == "-o":
             outputfile = arg
         elif opt == "-w":
-            window_size = arg
-    print ('Dataset 1: ', dataset_1)
-    print ('Dataset 2: ', dataset_2)
-    print ('Output File : ', outputfile)
-    print ('Window Size : ', window_size)
+            window_size = int(arg)
+    print('Dataset A: ', dataset_1)
+    print('Dataset B: ', dataset_2)
+    print('Output File : ', outputfile)
+    print('Window Size : ', window_size)
 
     chunk_size = 100000
 
@@ -106,7 +107,7 @@ def main(argv):
     output_df['BP_distance'] = np.abs(output_df['BP_dataset1'] - output_df['BP_dataset2'])
     # Beta is ln(OR)
     output_df['BETA_d1'] = np.log(output_df['OR_d1'])
-    headers = ['CHR', 'BP_dataset1', 'BP_dataset2', 'BP_distance', 'A1_d1', 'A2_d1', 'A1_d2', 'A2_d2', 'N', 'P', 'P(R)',
+    headers = ['CHR', 'BP_dataset1', 'BP_dataset2', 'BP_distance', 'A1_d1', 'A2_d1', 'A1_d2', 'A2_d2', 'N', 'P_d2', 'P(R)_d2',
                'P.x_d1', 'P.y_d1', 'BETA_d1', 'BETA_d2']
     output_df = output_df[headers]
     f = open(outputfile, 'w')
