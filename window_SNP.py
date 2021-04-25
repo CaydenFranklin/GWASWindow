@@ -2,15 +2,19 @@ import pandas as pd
 import numpy as np
 import sys, getopt
 
-# TODO: Currently hardcoded, will add as arguments
-#dataset_1 = "/Volumes/BossDaddy/GWASAnalysis/FINAL_FIXED_uk_sig_into_clumped_bbj_replication.txt"
-#dataset_2 = "/Volumes/BossDaddy/GWASAnalysis/Meta_Analysis/plink_african_formatted_cutoff.meta"
-#final_file_name = "/Volumes/BossDaddy/GWASAnalysis/Meta_Analysis/uk_BBJ_AFR_windowed_50kb_replication_ordered_unique.txt"
+
+dataset_1 = "/Volumes/BossDaddy/GWASAnalysis/pruned_uk_bb_SNPs.txt"
+dataset_2 = "/Volumes/BossDaddy/GWASAnalysis/Meta_Analysis/plink_african_formatted_cutoff.meta"
+final_file_name = "/Volumes/BossDaddy/GWASAnalysis/WindowOutput/uk_AFR_windowed_10kb.txt"
 
 
 def check_snps(uk_bbj_sig_snps):
-    significant_snp_df = pd.read_csv(uk_bbj_sig_snps, sep='\t', skiprows=1, names=["CHR", "BP", "OR", "SE", "P.x", "A1",
-                                                                                   "A2", "SNP", "P.y"])
+    significant_snp_df = pd.read_csv(uk_bbj_sig_snps, sep='\t', index_col=False, skiprows=1, names=["CHR", "BP", "SNP",
+                                                                                                    "BETA", "SE", "P",
+                                                                                                    "A1", "A2"])
+    significant_snp_df.CHR = significant_snp_df.CHR.replace('X', 24)
+    significant_snp_df.CHR = significant_snp_df.CHR.astype(int)
+    significant_snp_df = significant_snp_df.dropna()
     return significant_snp_df
 
 
@@ -38,15 +42,20 @@ def chunk_afr(chromosomes, data_iterator, chunks):
 
 def find_sig_snps(window_size, sig_snp_df, sample2_df):
     row_list = []
-    for bp in sig_snp_df.BP:
-        sample2_df_subset = sample2_df[np.abs(sample2_df.BP - bp) <= window_size].copy()
-        sample2_df_subset['BP_dataset1'] = bp
-        sample2_df_subset = pd.merge(sample2_df_subset, sig_snp_df, left_on=sample2_df_subset['BP_dataset1'],
-                                     right_on=sig_snp_df['BP'],
-                                     suffixes=['_d2', '_d1'])
-        row_list.append(sample2_df_subset)
+    count = 0
+    length = len(sig_snp_df.BP)
+    print("Number of D1 SNPs to be compared on next chromosome " + str(length))
+    for index, row in sig_snp_df.iterrows():
+        sample2_df_window_subset = sample2_df[np.logical_and(np.abs(sample2_df.BP - row.BP) <= window_size,
+                                                             sample2_df.P <= 5 * (10 ** -6))].copy()
+        sample2_df_window_subset['BP_dataset1'] = row.BP
+        row_list.append(sample2_df_window_subset)
     subset_df = pd.concat(row_list)
-    filtered_df = subset_df.loc[subset_df.groupby('BP_dataset1').P.idxmin()]
+    merged_df = pd.merge(subset_df, sig_snp_df,
+                         left_on=subset_df['BP_dataset1'],
+                         right_on=sig_snp_df['BP'],
+                         suffixes=['_d2', '_d1'])
+    filtered_df = merged_df.loc[merged_df.groupby('BP_dataset1').P_d2.idxmin()]
     return filtered_df
 
 
@@ -54,7 +63,7 @@ def main(argv):
     # both input files
     dataset_1 = ''
     dataset_2 = ''
-    #file for results to be written to
+    # file for results to be written to
     outputfile = ''
     # maximum base pair distance between significant SNPs on each dataset
     window_size = 0
@@ -96,26 +105,25 @@ def main(argv):
         sample1_chr_set = sig_snp_df[sig_snp_df['CHR'] == chrm]
         chr_sig_replicated_snps[chrm] = find_sig_snps(window_size, sample1_chr_set, sample2_chr_set)
         output_df = pd.concat([output_df, chr_sig_replicated_snps[chrm]])
+        print("Finished merge for chromosome " + str(chrm))
     # changes order to move bp_uk to 2nd column and renames column names
-    output_df = output_df.drop(columns=['BP_dataset1', 'SNP_d2', 'CHR_d1'])
-    #renaming columns for consistancy
+    output_df = output_df.drop(columns=['BP_dataset1', 'CHR_d1'])
+    # renaming columns for consistancy
     output_df = output_df.rename(columns={'key_0': 'BP_dataset1', 'BP_d2': 'BP_dataset2', 'CHR_d2': 'CHR',
-                                          'BETA': 'BETA_d2', 'BETA(R)': 'BETA(R)_d2', 'OR': 'OR_d1',
-                                          'P.x': 'P.x_d1', 'P.y': 'P.y_d1', 'P': 'P_d2', 'P(R)': 'P(R)_d2'})
+                                          'P(R)': 'P(R)_d2', 'SNP': 'SNP_d1'})
     # sorts data and removes duplicate rows
     output_df = output_df.sort_values(by=['CHR', 'BP_dataset2']).drop_duplicates()
-    output_df['BP_distance'] = np.abs(output_df['BP_dataset1'] - output_df['BP_dataset2'])
-    # Beta is ln(OR)
-    output_df['BETA_d1'] = np.log(output_df['OR_d1'])
-    headers = ['CHR', 'BP_dataset1', 'BP_dataset2', 'BP_distance', 'A1_d1', 'A2_d1', 'A1_d2', 'A2_d2', 'N', 'P_d2', 'P(R)_d2',
-               'P.x_d1', 'P.y_d1', 'BETA_d1', 'BETA_d2']
+    output_df['BP_distance'] = output_df['BP_dataset1'] - output_df['BP_dataset2']
+    headers = ['CHR', 'SNP_d1', 'BP_dataset1', 'BP_dataset2', 'BP_distance', 'A1_d1', 'A2_d1', 'A1_d2', 'A2_d2', 'N',
+               'P_d1', 'P_d2', 'P(R)_d2', 'BETA_d1', 'BETA_d2']
     output_df = output_df[headers]
     f = open(outputfile, 'w')
     f.write("dataset_1 " + dataset_1.split('/')[-1] + '\n')
     f.write("dataset_2 " + dataset_2.split('/')[-1] + '\n')
     f.write("window_size " + str(window_size) + '\n')
-    f.write(output_df.to_string(index=False))
+    f.write(output_df.to_csv(index=False, sep='\t'))
     f.close()
+
 
 if __name__ == '__main__':
     main(sys.argv[1:])
